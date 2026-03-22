@@ -19,10 +19,50 @@
 #include "rust-compile-block.h"
 #include "rust-compile-stmt.h"
 #include "rust-compile-expr.h"
+#include "rust-compile-implitem.h"
 #include "rust-hir-expr.h"
+#include "rust-hir-path-probe.h"
+#include "rust-tree.h"
 
 namespace Rust {
 namespace Compile {
+
+namespace {
+
+static tree
+compile_drop_call (Context *ctx, Bvariable *var, TyTy::BaseType *ty,
+		   location_t locus)
+{
+  auto drop_lang = ctx->get_mappings ().lookup_lang_item (LangItem::Kind::DROP);
+  if (!drop_lang.has_value ())
+    return NULL_TREE;
+
+  Resolver::TraitReference *drop_ref = nullptr;
+  if (!ctx->get_tyctx ()->lookup_trait_reference (*drop_lang, &drop_ref))
+    return NULL_TREE;
+
+  HIR::PathIdentSegment seg ("drop");
+  auto candidates = Resolver::PathProbeImplTrait::Probe (ty, seg, drop_ref);
+  if (candidates.empty ())
+    return NULL_TREE;
+
+  auto &candidate = *candidates.begin ();
+
+  rust_assert (candidate.is_impl_candidate ());
+  rust_assert (candidate.ty->get_kind () == TyTy::TypeKind::FNDEF);
+  auto *fn_type = static_cast<TyTy::FnType *> (candidate.ty);
+
+  tree fn_addr
+    = CompileInherentImplItem::Compile (candidate.item.impl.impl_item, ctx,
+					fn_type, locus);
+
+  tree var_expr = Backend::var_expression (var, locus);
+  tree var_addr = HIRCompileBase::address_expression (var_expr, locus);
+
+  return Backend::call_expression (fn_addr, {var_addr}, NULL_TREE, locus);
+}
+
+} // namespace
 
 CompileBlock::CompileBlock (Context *ctx, Bvariable *result)
   : HIRCompileBase (ctx), translated (nullptr), result (result)
@@ -83,6 +123,23 @@ CompileBlock::visit (HIR::BlockExpr &expr)
 	= Backend::assignment_statement (result_reference, compiled_expr,
 					 expr.get_locus ());
       ctx->add_statement (assignment);
+    }
+
+  std::vector<std::pair<HirId, location_t>> &drop_candidates
+    = ctx->peek_block_drop_candidates ();
+
+  for (auto it = drop_candidates.rbegin (); it != drop_candidates.rend (); ++it)
+    {
+      TyTy::BaseType *ty = nullptr;
+      Bvariable *var = nullptr;
+
+      if (ctx->get_tyctx ()->lookup_type (it->first, &ty)
+	  && ctx->lookup_var_decl (it->first, &var))
+	{
+	  tree drop_call = compile_drop_call (ctx, var, ty, it->second);
+	  if (drop_call != NULL_TREE)
+	    ctx->add_statement (convert_to_void (drop_call, ICV_STATEMENT));
+	}
     }
 
   ctx->pop_block ();

@@ -154,6 +154,7 @@ public:
     DISCRIMINANT_TYPE,
     DISCRIMINANT_KIND,
 
+    DROP,
     MANUALLY_DROP,
   };
 

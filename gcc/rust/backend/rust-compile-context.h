@@ -101,6 +101,7 @@ public:
   {
     scope_stack.push_back (scope);
     statements.push_back ({});
+    drop_candidates.emplace_back ();
   }
 
   tree pop_block ()
@@ -110,6 +111,7 @@ public:
 
     auto stmts = statements.back ();
     statements.pop_back ();
+    drop_candidates.pop_back ();
 
     Backend::block_add_statements (block, stmts);
 
@@ -130,6 +132,16 @@ public:
   }
 
   void add_statement (tree stmt) { statements.back ().push_back (stmt); }
+
+  std::vector<std::pair<HirId, location_t>> &peek_block_drop_candidates ()
+  {
+    return drop_candidates.back ();
+  }
+
+  void note_simple_drop_candidate (HirId hirid, location_t locus)
+  {
+    drop_candidates.back ().push_back ({hirid, locus});
+  }
 
   void insert_var_decl (HirId id, ::Bvariable *decl)
   {
@@ -419,6 +431,7 @@ private:
   std::map<HirId, tree> compiled_labels;
   std::vector<::std::vector<tree>> statements;
   std::vector<tree> scope_stack;
+  std::vector<std::vector<std::pair<HirId, location_t>>> drop_candidates;
   std::vector<::Bvariable *> loop_value_stack;
   std::vector<tree> loop_begin_labels;
   std::map<DefId, std::vector<std::pair<const TyTy::BaseType *, tree>>>

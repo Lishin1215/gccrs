@@ -21,6 +21,7 @@
 #include "rust-compile-expr.h"
 #include "rust-compile-type.h"
 #include "rust-compile-var-decl.h"
+#include "rust-hir-pattern.h"
 
 namespace Rust {
 namespace Compile {
@@ -66,6 +67,18 @@ CompileStmt::visit (HIR::LetStmt &stmt)
   tree fndecl = fnctx.fndecl;
   tree translated_type = TyTyResolveCompile::compile (ctx, ty);
   CompileVarDecl::compile (fndecl, translated_type, &stmt_pattern, ctx);
+
+  if (stmt.has_init_expr ()
+      && stmt_pattern.get_pattern_type ()
+	   == HIR::Pattern::PatternType::IDENTIFIER)
+    {
+      HIR::IdentifierPattern &identifier
+	= static_cast<HIR::IdentifierPattern &> (stmt_pattern);
+
+      if (!identifier.has_subpattern () && !identifier.get_is_ref ())
+	ctx->note_simple_drop_candidate (
+	  identifier.get_mappings ().get_hirid (), stmt.get_locus ());
+    }
 
   // nothing to do
   if (!stmt.has_init_expr ())
