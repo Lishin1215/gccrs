@@ -825,6 +825,7 @@ HIRCompileBase::compile_function (
   // setup the params
   TyTy::BaseType *tyret = fntype->get_return_type ();
   std::vector<Bvariable *> param_vars;
+  std::vector<DropCandidate> param_drop_candidates;
   if (self_param)
     {
       rust_assert (fntype->is_method ());
@@ -838,6 +839,10 @@ HIRCompileBase::compile_function (
       param_vars.push_back (compiled_self_param);
       ctx->insert_var_decl (self_param->get_mappings ().get_hirid (),
 			    compiled_self_param);
+
+      if (CompileDrop::type_has_drop_impl (ctx, self_tyty_lookup))
+	param_drop_candidates.emplace_back (
+	  self_param->get_mappings ().get_hirid (), self_param->get_locus ());
     }
 
   // offset from + 1 for the TyTy::FnType being used when this is a method to
@@ -860,6 +865,10 @@ HIRCompileBase::compile_function (
       const HIR::Pattern &param_pattern = referenced_param.get_param_name ();
       ctx->insert_var_decl (param_pattern.get_mappings ().get_hirid (),
 			    compiled_param_var);
+
+      if (CompileDrop::type_has_drop_impl (ctx, param_tyty))
+	param_drop_candidates.emplace_back (
+	  param_pattern.get_mappings ().get_hirid (), param_pattern.get_locus ());
     }
 
   if (!Backend::function_set_parameters (fndecl, param_vars))
@@ -872,6 +881,9 @@ HIRCompileBase::compile_function (
   tree code_block = Backend::block (fndecl, enclosing_scope, {} /*locals*/,
 				    start_location, end_location);
   ctx->push_block (code_block);
+
+  for (auto &candidate : param_drop_candidates)
+    ctx->note_simple_drop_candidate (candidate.hirid, candidate.locus);
 
   Bvariable *return_address = nullptr;
   tree return_type = TyTyResolveCompile::compile (ctx, tyret);
