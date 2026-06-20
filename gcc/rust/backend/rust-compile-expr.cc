@@ -141,6 +141,16 @@ CompileExpr::visit (HIR::ReturnExpr &expr)
 
       return_value = coercion_site (id, return_value, actual, expected,
 				    lvalue_locus, rvalue_locus);
+
+      if (!fncontext.retty->is_unit ())
+	{
+	  tree result_reference
+	    = Backend::var_expression (fncontext.ret_addr, lvalue_locus);
+	  tree assignment
+	    = Backend::assignment_statement (result_reference, return_value,
+					     expr.get_locus ());
+	  ctx->add_statement (assignment);
+	}
     }
 
   if (fncontext.retty->is_unit ())
@@ -150,9 +160,13 @@ CompileExpr::visit (HIR::ReturnExpr &expr)
 	  ctx->add_statement (return_value);
 	  return_value = unit_expression (expr.get_locus ());
 	}
-
-      CompileDrop::emit_return_scope_drop_calls (ctx);
     }
+
+  CompileDrop::emit_return_scope_drop_calls (ctx);
+
+  if (!fncontext.retty->is_unit ())
+    return_value
+      = Backend::var_expression (fncontext.ret_addr, expr.get_locus ());
 
   tree return_stmt = Backend::return_statement (fncontext.fndecl, return_value,
 						expr.get_locus ());
