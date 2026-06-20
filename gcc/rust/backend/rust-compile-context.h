@@ -44,6 +44,15 @@ struct fncontext
   TyTy::BaseType *retty;
 };
 
+struct ReturnScope
+{
+  explicit ReturnScope (size_t drop_scope_index)
+    : drop_scope_index (drop_scope_index)
+  {}
+
+  size_t drop_scope_index;
+};
+
 struct CustomDeriveInfo
 {
   tree fndecl;
@@ -140,6 +149,17 @@ public:
   {
     rust_assert (!block_drop_candidates.empty ());
     return block_drop_candidates.back ();
+  }
+
+  size_t block_drop_scope_count () const
+  {
+    return block_drop_candidates.size ();
+  }
+
+  std::vector<DropCandidate> &block_drop_candidates_at (size_t index)
+  {
+    rust_assert (index < block_drop_candidates.size ());
+    return block_drop_candidates[index];
   }
 
   void note_simple_drop_candidate (HirId hirid, location_t locus)
@@ -313,6 +333,24 @@ public:
     return fn_stack.back ();
   }
 
+  void push_return_scope ()
+  {
+    rust_assert (!block_drop_candidates.empty ());
+    return_scope_stack.emplace_back (block_drop_candidates.size () - 1);
+  }
+
+  void pop_return_scope ()
+  {
+    rust_assert (!return_scope_stack.empty ());
+    return_scope_stack.pop_back ();
+  }
+
+  ReturnScope peek_return_scope ()
+  {
+    rust_assert (!return_scope_stack.empty ());
+    return return_scope_stack.back ();
+  }
+
   void push_type (tree t) { type_decls.push_back (t); }
   void push_var (::Bvariable *v) { var_decls.push_back (v); }
   void push_const (tree c) { const_decls.push_back (c); }
@@ -429,6 +467,7 @@ private:
 
   // state
   std::vector<fncontext> fn_stack;
+  std::vector<ReturnScope> return_scope_stack;
   std::map<HirId, ::Bvariable *> compiled_var_decls;
   std::map<hashval_t, tree> compiled_type_map;
   std::map<HirId, tree> compiled_fn_map;

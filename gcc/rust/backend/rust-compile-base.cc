@@ -897,7 +897,9 @@ HIRCompileBase::compile_function (
   ctx->add_statement (ret_var_stmt);
 
   ctx->push_fn (fndecl, return_address, tyret);
+  ctx->push_return_scope ();
   compile_function_body (fndecl, *function_body, tyret);
+  ctx->pop_return_scope ();
   tree bind_tree = ctx->pop_block ();
 
   gcc_assert (TREE_CODE (bind_tree) == BIND_EXPR);

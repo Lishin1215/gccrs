@@ -33,6 +33,12 @@ public:
 				 TyTy::BaseType *ty, location_t locus);
 
   static void emit_current_scope_drop_calls (Context *ctx);
+  static void emit_return_scope_drop_calls (Context *ctx);
+
+private:
+  static void
+  emit_drop_calls (Context *ctx,
+		   std::vector<DropCandidate> &drop_candidates);
 };
 
 } // namespace Compile

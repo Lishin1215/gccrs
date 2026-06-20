@@ -19,6 +19,7 @@
 #include "rust-compile-expr.h"
 #include "rust-backend.h"
 #include "rust-compile-context.h"
+#include "rust-compile-drop.h"
 #include "rust-compile-type.h"
 #include "rust-compile-struct-field-expr.h"
 #include "rust-compile-pattern.h"
@@ -140,6 +141,17 @@ CompileExpr::visit (HIR::ReturnExpr &expr)
 
       return_value = coercion_site (id, return_value, actual, expected,
 				    lvalue_locus, rvalue_locus);
+    }
+
+  if (fncontext.retty->is_unit ())
+    {
+      if (expr.has_return_expr ())
+	{
+	  ctx->add_statement (return_value);
+	  return_value = unit_expression (expr.get_locus ());
+	}
+
+      CompileDrop::emit_return_scope_drop_calls (ctx);
     }
 
   tree return_stmt = Backend::return_statement (fncontext.fndecl, return_value,
@@ -2644,6 +2656,7 @@ CompileExpr::generate_closure_function (HIR::ClosureExpr &expr,
   ctx->add_statement (ret_var_stmt);
 
   ctx->push_fn (fndecl, return_address, tyret);
+  ctx->push_return_scope ();
 
   if (is_block_expr)
     {
@@ -2658,6 +2671,7 @@ CompileExpr::generate_closure_function (HIR::ClosureExpr &expr,
       ctx->add_statement (return_expr);
     }
 
+  ctx->pop_return_scope ();
   tree bind_tree = ctx->pop_block ();
 
   gcc_assert (TREE_CODE (bind_tree) == BIND_EXPR);

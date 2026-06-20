@@ -88,10 +88,9 @@ CompileDrop::compile_drop_call (Context *ctx, Bvariable *var,
 }
 
 void
-CompileDrop::emit_current_scope_drop_calls (Context *ctx)
+CompileDrop::emit_drop_calls (
+  Context *ctx, std::vector<DropCandidate> &drop_candidates)
 {
-  auto &drop_candidates = ctx->peek_block_drop_candidates ();
-
   for (auto it = drop_candidates.rbegin (); it != drop_candidates.rend (); ++it)
     {
       TyTy::BaseType *ty = nullptr;
@@ -106,6 +105,26 @@ CompileDrop::emit_current_scope_drop_calls (Context *ctx)
       tree drop_call = CompileDrop::compile_drop_call (ctx, var, ty, it->locus);
       if (drop_call != NULL_TREE)
 	ctx->add_statement (convert_to_void (drop_call, ICV_STATEMENT));
+    }
+}
+
+void
+CompileDrop::emit_current_scope_drop_calls (Context *ctx)
+{
+  emit_drop_calls (ctx, ctx->peek_block_drop_candidates ());
+}
+
+void
+CompileDrop::emit_return_scope_drop_calls (Context *ctx)
+{
+  auto return_scope = ctx->peek_return_scope ();
+  size_t scope_count = ctx->block_drop_scope_count ();
+  rust_assert (return_scope.drop_scope_index < scope_count);
+
+  for (size_t i = scope_count; i > return_scope.drop_scope_index; --i)
+    {
+      size_t scope_index = i - 1;
+      emit_drop_calls (ctx, ctx->block_drop_candidates_at (scope_index));
     }
 }
 
