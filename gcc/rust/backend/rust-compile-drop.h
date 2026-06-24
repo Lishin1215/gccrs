@@ -33,9 +33,13 @@ public:
 
   tree build_current_scope_drop_cleanup ();
   void emit_current_scope_drop_calls ();
+  void emit_return_scope_drop_calls ();
 
 private:
   tree compile_drop_call (Bvariable *var, TyTy::BaseType *ty, location_t locus);
+
+  void
+  emit_drop_candidate_calls (const std::vector<DropCandidate> &drop_candidates);
 
   Context *ctx;
 };
