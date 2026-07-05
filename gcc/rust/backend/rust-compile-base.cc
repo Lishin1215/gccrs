@@ -709,6 +709,7 @@ HIRCompileBase::compile_function_body (tree fndecl,
 	  return_value = coercion_site (id, return_value, actual, expected,
 					lvalue_locus, rvalue_locus);
 
+<<<<<<< HEAD
 	  /* Save the non-unit tail expression result before emitting scope
 	    drops, so a tail call like foo() is evaluated before locals are
 	    dropped.  Conceptually, this changes lowering from:
@@ -731,6 +732,8 @@ HIRCompileBase::compile_function_body (tree fndecl,
 	  CompileDrop (ctx).emit_current_scope_drop_calls ();
 
 	  result_reference = Backend::var_expression (fnctx.ret_addr, locus);
+=======
+>>>>>>> 8089f41b0a7 (gccrs: Emit function-scope drops through TRY_FINALLY_EXPR)
 	  tree return_stmt
 	    = Backend::return_statement (fndecl, result_reference, locus);
 	  ctx->add_statement (return_stmt);
@@ -755,7 +758,7 @@ HIRCompileBase::compile_function_body (tree fndecl,
       // errors should have occurred
       location_t locus = function_body.get_locus ();
       tree return_value = unit_expression (locus);
-      CompileDrop (ctx).emit_current_scope_drop_calls ();
+
       tree return_stmt
 	= Backend::return_statement (fndecl, return_value, locus);
       ctx->add_statement (return_stmt);
@@ -917,7 +920,10 @@ HIRCompileBase::compile_function (
 
   ctx->push_fn (fndecl, return_address, tyret);
   compile_function_body (fndecl, *function_body, tyret);
-  tree bind_tree = ctx->pop_block ();
+
+  tree cleanup = CompileDrop (ctx).build_current_scope_drop_cleanup ();
+  tree bind_tree
+    = ctx->pop_block_with_cleanup (cleanup, function_body->get_locus ());
 
   gcc_assert (TREE_CODE (bind_tree) == BIND_EXPR);
   DECL_SAVED_TREE (fndecl) = bind_tree;
@@ -1002,7 +1008,9 @@ HIRCompileBase::compile_constant_item (
       ctx->add_statement (return_expr);
     }
 
-  tree bind_tree = ctx->pop_block ();
+  tree cleanup = CompileDrop (ctx).build_current_scope_drop_cleanup ();
+  tree bind_tree
+    = ctx->pop_block_with_cleanup (cleanup, const_value_expr.get_locus ());
 
   gcc_assert (TREE_CODE (bind_tree) == BIND_EXPR);
   DECL_SAVED_TREE (fndecl) = bind_tree;

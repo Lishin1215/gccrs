@@ -2932,7 +2932,9 @@ CompileExpr::generate_closure_function (HIR::ClosureExpr &expr,
       ctx->add_statement (return_expr);
     }
 
-  tree bind_tree = ctx->pop_block ();
+  tree cleanup = CompileDrop (ctx).build_current_scope_drop_cleanup ();
+  tree bind_tree
+    = ctx->pop_block_with_cleanup (cleanup, function_body.get_locus ());
 
   gcc_assert (TREE_CODE (bind_tree) == BIND_EXPR);
   DECL_SAVED_TREE (fndecl) = bind_tree;
