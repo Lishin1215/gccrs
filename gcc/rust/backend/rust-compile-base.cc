@@ -709,7 +709,6 @@ HIRCompileBase::compile_function_body (tree fndecl,
 	  return_value = coercion_site (id, return_value, actual, expected,
 					lvalue_locus, rvalue_locus);
 
-<<<<<<< HEAD
 	  /* Save the non-unit tail expression result before emitting scope
 	    drops, so a tail call like foo() is evaluated before locals are
 	    dropped.  Conceptually, this changes lowering from:
@@ -729,11 +728,7 @@ HIRCompileBase::compile_function_body (tree fndecl,
 							   return_value, locus);
 	  ctx->add_statement (assignment);
 
-	  CompileDrop (ctx).emit_current_scope_drop_calls ();
-
 	  result_reference = Backend::var_expression (fnctx.ret_addr, locus);
-=======
->>>>>>> 8089f41b0a7 (gccrs: Emit function-scope drops through TRY_FINALLY_EXPR)
 	  tree return_stmt
 	    = Backend::return_statement (fndecl, result_reference, locus);
 	  ctx->add_statement (return_stmt);
@@ -742,8 +737,6 @@ HIRCompileBase::compile_function_body (tree fndecl,
 	{
 	  // just add the stmt expression
 	  ctx->add_statement (return_value);
-
-	  CompileDrop (ctx).emit_current_scope_drop_calls ();
 
 	  // now just return unit expression
 	  tree unit_expr = unit_expression (locus);
