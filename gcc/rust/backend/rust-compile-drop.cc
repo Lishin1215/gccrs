@@ -21,6 +21,7 @@
 #include "rust-compile-base.h"
 #include "rust-compile-context.h"
 #include "rust-compile-implitem.h"
+#include "rust-bir-drop-analysis.h"
 #include "rust-hir-path-probe.h"
 #include "rust-hir-trait-reference.h"
 #include "rust-hir-type-bounds.h"
@@ -100,6 +101,11 @@ CompileDrop::build_current_scope_drop_cleanup ()
 
   for (auto it = drop_candidates.rbegin (); it != drop_candidates.rend (); ++it)
     {
+      BIR::DropState state;
+      if (BIR::DropAnalysis::get ().lookup (it->hirid, &state)
+	  && state == BIR::DropState::DEAD)
+	continue;
+
       TyTy::BaseType *ty = nullptr;
       Bvariable *var = nullptr;
 
