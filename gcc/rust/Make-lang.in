@@ -180,6 +180,7 @@ GRS_OBJS = \
     rust/rust-hir-type-check-intrinsic.o \
     rust/rust-borrow-checker.o \
     rust/rust-borrow-checker-diagnostics.o\
+    rust/rust-bir-drop-analysis.o \
     rust/rust-bir-builder-expr-stmt.o \
     rust/rust-bir-builder-pattern.o \
     rust/rust-bir-dump.o \

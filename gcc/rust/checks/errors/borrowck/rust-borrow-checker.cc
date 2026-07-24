@@ -21,6 +21,7 @@
 #include "rust-function-collector.h"
 #include "rust-bir-fact-collector.h"
 #include "rust-bir-builder.h"
+#include "rust-bir-drop-analysis.h"
 #include "rust-bir-dump.h"
 #include "polonius/rust-polonius.h"
 
@@ -40,6 +41,7 @@ dump_function_bir (const std::string &filename, BIR::Function &func,
       return;
     }
   BIR::Dump (file, func, name).go ();
+  BIR::DropAnalysis::get ().dump (file, func);
   file.close ();
 }
 
@@ -47,6 +49,9 @@ void
 BorrowChecker::go (HIR::Crate &crate)
 {
   std::string crate_name;
+
+  // BIR 還沒支援所有語法，先只在 -frust-borrowcheck 模式執行。
+  BIR::DropAnalysis::get ().clear ();
 
   if (enable_dump_bir)
     {
@@ -68,6 +73,7 @@ BorrowChecker::go (HIR::Crate &crate)
       BIR::BuilderContext ctx;
       BIR::Builder builder (ctx);
       auto bir = builder.build (*func);
+      BIR::DropAnalysis::get ().analyze (bir);
 
       if (enable_dump_bir)
 	{
