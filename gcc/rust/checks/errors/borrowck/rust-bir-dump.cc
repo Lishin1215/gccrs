@@ -210,6 +210,32 @@ Dump::visit (const Statement &stmt)
 	<< bb_fold_map[func.basic_blocks[statement_bb].successors.at (0)].value;
       bb_terminated = true;
       break;
+
+    case Statement::Kind::DROP:
+      stream << "Drop(";
+      visit_place (stmt.get_place ());
+      stream << "): ";
+
+      switch (stmt.get_drop_kind ())
+	{
+	case Statement::DropKind::UNCLASSIFIED:
+	  stream << "Unclassified";
+	  break;
+
+	case Statement::DropKind::STATIC:
+	  stream << "Static";
+	  break;
+
+	case Statement::DropKind::DEAD:
+	  stream << "Dead";
+	  break;
+
+	case Statement::DropKind::CONDITIONAL:
+	  stream << "Conditional";
+	  break;
+	}
+      break;
+
     case Statement::Kind::STORAGE_DEAD:
       stream << "StorageDead(";
       visit_place (stmt.get_place ());

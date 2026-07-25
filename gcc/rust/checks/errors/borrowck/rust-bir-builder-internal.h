@@ -169,13 +169,21 @@ protected:
 
   void push_new_scope () { ctx.place_db.push_new_scope (); }
 
+  void push_drop (PlaceId place)
+  {
+    ctx.get_current_bb ().statements.push_back (Statement::make_drop (place));
+  }
+
   void pop_scope ()
   {
     auto &scope = ctx.place_db.get_current_scope ();
     if (ctx.place_db.get_current_scope_id () != INVALID_SCOPE)
       {
 	std::for_each (scope.locals.rbegin (), scope.locals.rend (),
-		       [&] (PlaceId place) { push_storage_dead (place); });
+		       [&] (PlaceId place) {
+			 push_drop (place);
+			 push_storage_dead (place);
+		       });
       }
     ctx.place_db.pop_scope ();
   }
@@ -200,7 +208,10 @@ protected:
 	// TODO: Perform stable toposort based on `borrowed_by`.
 
 	std::for_each (scope.locals.rbegin (), scope.locals.rend (),
-		       [&] (PlaceId place) { push_storage_dead (place); });
+		       [&] (PlaceId place) {
+			 push_drop (place);
+			 push_storage_dead (place);
+		       });
 	current_scope_id = scope.parent;
       }
   }
