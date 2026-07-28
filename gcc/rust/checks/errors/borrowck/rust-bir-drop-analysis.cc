@@ -23,6 +23,154 @@
 namespace Rust {
 namespace BIR {
 
+namespace {
+
+struct InitializationState
+{
+  explicit InitializationState (size_t place_count)
+    : maybe_initialized (place_count, false),
+      maybe_uninitialized (place_count, false), reachable (false)
+  {}
+
+  std::vector<bool> maybe_initialized;
+  std::vector<bool> maybe_uninitialized;
+  bool reachable;
+};
+
+static bool
+is_straight_line (const Function &function)
+{
+  std::set<BasicBlockId> visited;
+  BasicBlockId current = ENTRY_BASIC_BLOCK;
+
+  while (current != INVALID_BB)
+    {
+      if (!visited.insert (current).second)
+	return false;
+
+      const BasicBlock &block = function.basic_blocks[current];
+
+      if (block.successors.empty ())
+	return true;
+
+      if (block.successors.size () != 1)
+	return false;
+
+      current = block.successors.front ();
+    }
+
+  return true;
+}
+
+static bool
+merge_state (InitializationState &into, const InitializationState &from)
+{
+  if (!from.reachable)
+    return false;
+
+  if (!into.reachable)
+    {
+      into = from;
+      return true;
+    }
+
+  bool changed = false;
+  for (size_t i = 0; i < into.maybe_initialized.size (); ++i)
+    {
+      bool maybe_initialized
+	= into.maybe_initialized[i] || from.maybe_initialized[i];
+      bool maybe_uninitialized
+	= into.maybe_uninitialized[i] || from.maybe_uninitialized[i];
+
+      changed |= maybe_initialized != into.maybe_initialized[i];
+      changed |= maybe_uninitialized != into.maybe_uninitialized[i];
+
+      into.maybe_initialized[i] = maybe_initialized;
+      into.maybe_uninitialized[i] = maybe_uninitialized;
+    }
+
+  return changed;
+}
+
+static void
+set_initialized (InitializationState &state, PlaceId place)
+{
+  state.maybe_initialized[place.value] = true;
+  state.maybe_uninitialized[place.value] = false;
+}
+
+static void
+set_uninitialized (InitializationState &state, PlaceId place)
+{
+  state.maybe_initialized[place.value] = false;
+  state.maybe_uninitialized[place.value] = true;
+}
+
+static void
+apply_statement (Function &function, Statement &statement,
+		 InitializationState &state)
+{
+  PlaceId place = statement.get_place ();
+
+  switch (statement.get_kind ())
+    {
+    case Statement::Kind::STORAGE_LIVE:
+      set_uninitialized (state, place);
+      break;
+
+    case Statement::Kind::ASSIGNMENT:
+      {
+	PlaceId lhs = place;
+	AbstractExpr &expr = statement.get_expr ();
+
+	if (expr.get_kind () == ExprKind::ASSIGNMENT)
+	  {
+	    PlaceId rhs = static_cast<Assignment &> (expr).get_rhs ();
+	    const Place &rhs_place = function.place_db[rhs];
+
+	    if (rhs_place.kind == Place::VARIABLE
+		&& rhs_place.should_be_moved ())
+	      set_uninitialized (state, rhs);
+	  }
+
+	set_initialized (state, lhs);
+	break;
+      }
+
+    case Statement::Kind::DROP:
+    case Statement::Kind::STORAGE_DEAD:
+      set_uninitialized (state, place);
+      break;
+
+    case Statement::Kind::SWITCH:
+    case Statement::Kind::RETURN:
+    case Statement::Kind::GOTO:
+    case Statement::Kind::USER_TYPE_ASCRIPTION:
+    case Statement::Kind::FAKE_READ:
+      break;
+    }
+}
+
+static Statement::DropKind
+classify_drop (const InitializationState &state, PlaceId place)
+{
+  bool maybe_initialized = state.maybe_initialized[place.value];
+  bool maybe_uninitialized = state.maybe_uninitialized[place.value];
+
+  if (maybe_initialized && maybe_uninitialized)
+    return Statement::DropKind::CONDITIONAL;
+
+  if (maybe_initialized)
+    return Statement::DropKind::STATIC;
+
+  if (maybe_uninitialized)
+    return Statement::DropKind::DEAD;
+
+  return Statement::DropKind::UNCLASSIFIED;
+}
+
+} // namespace
+
 DropAnalysis &
 DropAnalysis::get ()
 {
@@ -39,73 +187,69 @@ DropAnalysis::clear ()
 void
 DropAnalysis::analyze (Function &function)
 {
-  std::vector<BasicBlockId> block_order;
-  std::set<BasicBlockId> visited;
+  size_t place_count = function.place_db.size ();
+  size_t block_count = function.basic_blocks.size ();
 
-  BasicBlockId current = ENTRY_BASIC_BLOCK;
+  std::vector<InitializationState> entry_states;
+  entry_states.reserve (block_count);
+  for (size_t i = 0; i < block_count; ++i)
+    entry_states.emplace_back (place_count);
 
-  while (current != INVALID_BB)
-    {
-      if (!visited.insert (current).second)
-	return;
-
-      block_order.push_back (current);
-
-      const BasicBlock &block = function.basic_blocks[current];
-
-      if (block.successors.empty ())
-	break;
-
-      if (block.successors.size () != 1)
-	return;
-
-      current = block.successors.front ();
-    }
-
-  std::vector<bool> initialized (function.place_db.size (), false);
+  InitializationState &entry_state = entry_states[ENTRY_BASIC_BLOCK.value];
+  entry_state.reachable = true;
+  for (size_t i = 0; i < place_count; ++i)
+    entry_state.maybe_uninitialized[i] = true;
 
   for (PlaceId argument : function.arguments)
-    initialized[argument.value] = true;
+    set_initialized (entry_state, argument);
 
-  for (BasicBlockId block_id : block_order)
+  std::vector<BasicBlockId> worklist;
+  std::vector<bool> queued (block_count, false);
+  worklist.push_back (ENTRY_BASIC_BLOCK);
+  queued[ENTRY_BASIC_BLOCK.value] = true;
+
+  while (!worklist.empty ())
     {
+      BasicBlockId block_id = worklist.back ();
+      worklist.pop_back ();
+      queued[block_id.value] = false;
+
+      InitializationState state = entry_states[block_id.value];
+      BasicBlock &block = function.basic_blocks[block_id];
+      for (Statement &statement : block.statements)
+	apply_statement (function, statement, state);
+
+      for (BasicBlockId successor : block.successors)
+	if (merge_state (entry_states[successor.value], state)
+	    && !queued[successor.value])
+	  {
+	    worklist.push_back (successor);
+	    queued[successor.value] = true;
+	  }
+    }
+
+  bool export_backend_dead = is_straight_line (function);
+  std::set<HirId> dead_drop_locals;
+  std::set<HirId> non_dead_drop_locals;
+
+  for (size_t i = 0; i < block_count; ++i)
+    {
+      InitializationState state = entry_states[i];
+      if (!state.reachable)
+	continue;
+
+      BasicBlockId block_id = {static_cast<uint32_t> (i)};
       BasicBlock &block = function.basic_blocks[block_id];
 
       for (Statement &statement : block.statements)
 	{
-	  PlaceId place = statement.get_place ();
-
-	  switch (statement.get_kind ())
+	  if (statement.get_kind () == Statement::Kind::DROP)
 	    {
-	    case Statement::Kind::STORAGE_LIVE:
-	      initialized[place.value] = false;
-	      break;
+	      PlaceId place = statement.get_place ();
+	      Statement::DropKind drop_kind = classify_drop (state, place);
+	      statement.set_drop_kind (drop_kind);
 
-	    case Statement::Kind::ASSIGNMENT:
-	      {
-		PlaceId lhs = place;
-		AbstractExpr &expr = statement.get_expr ();
-
-		if (expr.get_kind () == ExprKind::ASSIGNMENT)
-		  {
-		    PlaceId rhs = static_cast<Assignment &> (expr).get_rhs ();
-		    const Place &rhs_place = function.place_db[rhs];
-
-		    if (rhs_place.kind == Place::VARIABLE
-			&& rhs_place.should_be_moved ())
-		      initialized[rhs.value] = false;
-		  }
-
-		initialized[lhs.value] = true;
-		break;
-	      }
-
-	    case Statement::Kind::DROP:
-	      statement.set_drop_kind (initialized[place.value]
-					 ? Statement::DropKind::STATIC
-					 : Statement::DropKind::DEAD);
-
-	      if (statement.get_drop_kind () == Statement::DropKind::DEAD)
+	      if (export_backend_dead)
 		{
 		  const Place &dropped_place = function.place_db[place];
 		  if (dropped_place.kind == Place::VARIABLE)
@@ -115,26 +259,23 @@ DropAnalysis::analyze (Function &function)
 			  static_cast<NodeId> (
 			    dropped_place.variable_or_field_index));
 		      if (hirid.has_value ())
-			definitely_dead.insert (hirid.value ());
+			{
+			  if (drop_kind == Statement::DropKind::DEAD)
+			    dead_drop_locals.insert (hirid.value ());
+			  else
+			    non_dead_drop_locals.insert (hirid.value ());
+			}
 		    }
 		}
-
-	      initialized[place.value] = false;
-	      break;
-
-	    case Statement::Kind::STORAGE_DEAD:
-	      initialized[place.value] = false;
-	      break;
-
-	    case Statement::Kind::SWITCH:
-	    case Statement::Kind::RETURN:
-	    case Statement::Kind::GOTO:
-	    case Statement::Kind::USER_TYPE_ASCRIPTION:
-	    case Statement::Kind::FAKE_READ:
-	      break;
 	    }
+
+	  apply_statement (function, statement, state);
 	}
     }
+
+  for (HirId hirid : dead_drop_locals)
+    if (non_dead_drop_locals.find (hirid) == non_dead_drop_locals.end ())
+	definitely_dead.insert (hirid);
 }
 
 bool
