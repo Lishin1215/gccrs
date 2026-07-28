@@ -18,9 +18,23 @@
 
 #include "rust-bir-drop-analysis.h"
 #include "rust-bir.h"
+#include "rust-hir-map.h"
 
 namespace Rust {
 namespace BIR {
+
+DropAnalysis &
+DropAnalysis::get ()
+{
+  static DropAnalysis instance;
+  return instance;
+}
+
+void
+DropAnalysis::clear ()
+{
+  definitely_dead.clear ();
+}
 
 void
 DropAnalysis::analyze (Function &function)
@@ -91,6 +105,20 @@ DropAnalysis::analyze (Function &function)
 					 ? Statement::DropKind::STATIC
 					 : Statement::DropKind::DEAD);
 
+	      if (statement.get_drop_kind () == Statement::DropKind::DEAD)
+		{
+		  const Place &dropped_place = function.place_db[place];
+		  if (dropped_place.kind == Place::VARIABLE)
+		    {
+		      auto hirid
+			= Analysis::Mappings::get ().lookup_node_to_hir (
+			  static_cast<NodeId> (
+			    dropped_place.variable_or_field_index));
+		      if (hirid.has_value ())
+			definitely_dead.insert (hirid.value ());
+		    }
+		}
+
 	      initialized[place.value] = false;
 	      break;
 
@@ -107,6 +135,12 @@ DropAnalysis::analyze (Function &function)
 	    }
 	}
     }
+}
+
+bool
+DropAnalysis::is_definitely_dead (HirId id) const
+{
+  return definitely_dead.find (id) != definitely_dead.end ();
 }
 
 } // namespace BIR
