@@ -27,6 +27,8 @@
 #include "rust-compile-resolve-path.h"
 #include "rust-compile-block.h"
 #include "rust-compile-drop.h"
+#include "rust-compile-drop-builder.h"
+#include "rust-bir-drop-analysis.h"
 #include "rust-compile-implitem.h"
 #include "rust-constexpr.h"
 #include "rust-compile-type.h"
@@ -905,12 +907,36 @@ void
 CompileExpr::visit (HIR::QualifiedPathInExpression &expr)
 {
   translated = ResolvePathRef::Compile (expr, ctx);
+
+  HirId source = UNKNOWN_HIRID;
+  if (BIR::DropAnalysis::get ().lookup_move_source (
+	expr.get_mappings ().get_hirid (), &source))
+    {
+      tree clear
+	= DropBuilder (*ctx).drop_flag_assignment (source, false,
+					       expr.get_locus ());
+      if (clear != nullptr)
+	translated
+	  = Backend::compound_expression (clear, translated, expr.get_locus ());
+    }
 }
 
 void
 CompileExpr::visit (HIR::PathInExpression &expr)
 {
   translated = ResolvePathRef::Compile (expr, ctx);
+
+  HirId source = UNKNOWN_HIRID;
+  if (BIR::DropAnalysis::get ().lookup_move_source (
+	expr.get_mappings ().get_hirid (), &source))
+    {
+      tree clear
+	= DropBuilder (*ctx).drop_flag_assignment (source, false,
+					       expr.get_locus ());
+      if (clear != nullptr)
+	translated
+	  = Backend::compound_expression (clear, translated, expr.get_locus ());
+    }
 }
 
 void

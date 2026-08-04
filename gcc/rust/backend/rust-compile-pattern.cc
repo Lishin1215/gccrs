@@ -1349,6 +1349,12 @@ CompilePatternLet::visit (HIR::IdentifierPattern &pattern)
       ctx->add_statement (s);
     }
 
+  DropBuilder drop_builder (*ctx);
+  tree set_drop_flag = drop_builder.drop_flag_assignment (
+    pattern.get_mappings ().get_hirid (), true, pattern.get_locus ());
+  if (set_drop_flag != nullptr)
+    ctx->add_statement (set_drop_flag);
+
   TyTy::BaseType *drop_ty = ty;
   if (pattern.get_is_ref ())
     {
@@ -1362,7 +1368,6 @@ CompilePatternLet::visit (HIR::IdentifierPattern &pattern)
 
   if (!pattern.has_subpattern () && !pattern.get_is_ref ())
     {
-      DropBuilder drop_builder (*ctx);
       drop_builder.note_simple_drop_candidate (
 	pattern.get_mappings ().get_hirid (), pattern.get_locus ());
     }

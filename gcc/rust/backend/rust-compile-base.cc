@@ -898,7 +898,8 @@ HIRCompileBase::compile_function (
 
   DropBuilder drop_builder (*ctx);
   for (auto &candidate : param_drop_candidates)
-    drop_builder.note_simple_drop_candidate (candidate.hirid, candidate.locus);
+    drop_builder.note_simple_drop_candidate (candidate.hirid,
+					candidate.locus);
 
   Bvariable *return_address = nullptr;
   tree return_type = TyTyResolveCompile::compile (ctx, tyret);
@@ -912,6 +913,9 @@ HIRCompileBase::compile_function (
   ctx->add_statement (ret_var_stmt);
 
   ctx->push_fn (fndecl, return_address, tyret);
+  for (auto &candidate : param_drop_candidates)
+    drop_builder.maybe_create_drop_flag (candidate.hirid, candidate.locus,
+					 true);
   compile_function_body (fndecl, *function_body, tyret);
 
   tree cleanup = CompileDrop (ctx).build_current_scope_drop_cleanup ();

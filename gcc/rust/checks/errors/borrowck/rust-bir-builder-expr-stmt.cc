@@ -704,7 +704,8 @@ ExprStmtBuilder::visit (HIR::QualifiedPathInExpression &expr)
 {
   // Note: Type is only stored for the expr, not the segment.
   PlaceId result = resolve_variable_or_fn (expr, lookup_type (expr));
-  return_place (result, expr.get_locus ());
+  return_place (result, expr.get_locus (), false,
+		expr.get_mappings ().get_hirid ());
 }
 
 void
@@ -712,7 +713,8 @@ ExprStmtBuilder::visit (HIR::PathInExpression &expr)
 {
   // Note: Type is only stored for the expr, not the segment.
   PlaceId result = resolve_variable_or_fn (expr, lookup_type (expr));
-  return_place (result, expr.get_locus ());
+  return_place (result, expr.get_locus (), false,
+		expr.get_mappings ().get_hirid ());
 }
 
 void

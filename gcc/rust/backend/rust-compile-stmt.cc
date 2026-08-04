@@ -21,6 +21,8 @@
 #include "rust-compile-expr.h"
 #include "rust-compile-type.h"
 #include "rust-compile-var-decl.h"
+#include "rust-compile-drop.h"
+#include "rust-compile-drop-builder.h"
 
 namespace Rust {
 namespace Compile {
@@ -66,6 +68,11 @@ CompileStmt::visit (HIR::LetStmt &stmt)
   tree fndecl = fnctx.fndecl;
   tree translated_type = TyTyResolveCompile::compile (ctx, ty);
   CompileVarDecl::compile (fndecl, translated_type, &stmt_pattern, ctx);
+
+  if (stmt_pattern.get_pattern_type () == HIR::Pattern::IDENTIFIER
+      && CompileDrop (ctx).type_has_drop_impl (ty))
+    DropBuilder (*ctx).maybe_create_drop_flag (stmt_id, stmt.get_locus (),
+					       false);
 
   // nothing to do
   if (!stmt.has_init_expr ())

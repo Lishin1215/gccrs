@@ -182,6 +182,8 @@ void
 DropAnalysis::clear ()
 {
   definitely_dead.clear ();
+  conditionally_dropped.clear ();
+  move_sources.clear ();
 }
 
 void
@@ -243,11 +245,46 @@ DropAnalysis::analyze (Function &function)
 
       for (Statement &statement : block.statements)
 	{
+	  if (statement.get_kind () == Statement::Kind::ASSIGNMENT
+	      && statement.get_move_site () != UNKNOWN_HIRID)
+	    {
+	      AbstractExpr &expr = statement.get_expr ();
+	      if (expr.get_kind () == ExprKind::ASSIGNMENT)
+		{
+		  PlaceId rhs = static_cast<Assignment &> (expr).get_rhs ();
+		  const Place &rhs_place = function.place_db[rhs];
+		  if (rhs_place.kind == Place::VARIABLE
+		      && rhs_place.should_be_moved ())
+		    {
+		      auto hirid
+			= Analysis::Mappings::get ().lookup_node_to_hir (
+			  static_cast<NodeId> (
+			    rhs_place.variable_or_field_index));
+		      if (hirid.has_value ())
+			move_sources[statement.get_move_site ()] = hirid.value ();
+		    }
+		}
+	    }
+
 	  if (statement.get_kind () == Statement::Kind::DROP)
 	    {
 	      PlaceId place = statement.get_place ();
 	      Statement::DropKind drop_kind = classify_drop (state, place);
 	      statement.set_drop_kind (drop_kind);
+
+	      if (drop_kind == Statement::DropKind::CONDITIONAL)
+		{
+		  const Place &dropped_place = function.place_db[place];
+		  if (dropped_place.kind == Place::VARIABLE)
+		    {
+		      auto hirid
+			= Analysis::Mappings::get ().lookup_node_to_hir (
+			  static_cast<NodeId> (
+			    dropped_place.variable_or_field_index));
+		      if (hirid.has_value ())
+			conditionally_dropped.insert (hirid.value ());
+		    }
+		}
 
 	      if (export_backend_dead)
 		{
@@ -282,6 +319,23 @@ bool
 DropAnalysis::is_definitely_dead (HirId id) const
 {
   return definitely_dead.find (id) != definitely_dead.end ();
+}
+
+bool
+DropAnalysis::needs_drop_flag (HirId id) const
+{
+  return conditionally_dropped.find (id) != conditionally_dropped.end ();
+}
+
+bool
+DropAnalysis::lookup_move_source (HirId move_site, HirId *source) const
+{
+  auto it = move_sources.find (move_site);
+  if (it == move_sources.end ())
+    return false;
+
+  *source = it->second;
+  return true;
 }
 
 } // namespace BIR
